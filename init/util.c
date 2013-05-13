@@ -94,6 +94,9 @@ int create_socket(const char *name, int type, mode_t perm, uid_t uid, gid_t gid,
     if (socketcon)
         setsockcreatecon(socketcon);
 
+    if (socketcon)
+        setsockcreatecon(socketcon);
+
     fd = socket(PF_UNIX, type, 0);
     if (fd < 0) {
         ERROR("Failed to open socket '%s': %s\n", name, strerror(errno));
