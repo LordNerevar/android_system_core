@@ -46,10 +46,10 @@
 /* README
  *
  * What is this?
- * 
+ *
  * sdcard is a program that uses FUSE to emulate FAT-on-sdcard style
- * directory permissions (all files are given fixed owner, group, and 
- * permissions at creation, owner, group, and permissions are not 
+ * directory permissions (all files are given fixed owner, group, and
+ * permissions at creation, owner, group, and permissions are not
  * changeable, symlinks and hardlinks are not createable, etc.
  *
  * See usage() for command line options.
@@ -212,7 +212,7 @@ static bool str_icase_equals(void *keyA, void *keyB) {
 }
 
 static int int_hash(void *key) {
-    return (int) key;
+    return (int) (uintptr_t) key;
 }
 
 static bool int_equals(void *keyA, void *keyB) {
@@ -523,7 +523,7 @@ static void derive_permissions_locked(struct fuse* fuse, struct node *parent,
     case PERM_ANDROID_DATA:
     case PERM_ANDROID_OBB:
     case PERM_ANDROID_MEDIA:
-        appid = (appid_t) hashmapGet(fuse->package_to_appid, node->name);
+        appid = (appid_t) (uintptr_t) hashmapGet(fuse->package_to_appid, node->name);
         if (appid != 0) {
             node->uid = multiuser_get_uid(parent->userid, appid);
         }
@@ -547,7 +547,7 @@ static bool get_caller_has_rw_locked(struct fuse* fuse, const struct fuse_in_hea
     }
 
     appid_t appid = multiuser_get_app_id(hdr->uid);
-    return hashmapContainsKey(fuse->appid_with_rw, (void*) appid);
+    return hashmapContainsKey(fuse->appid_with_rw, (void*) (uintptr_t) appid);
 }
 
 /* Kernel has already enforced everything we returned through
@@ -1306,7 +1306,7 @@ static int handle_write(struct fuse* fuse, struct fuse_handler* handler,
     struct handle *h = id_to_ptr(req->fh);
     int res;
     __u8 aligned_buffer[req->size] __attribute__((__aligned__(PAGESIZE)));
-    
+
     if (req->flags & O_DIRECT) {
         memcpy(aligned_buffer, buffer, req->size);
         buffer = (const __u8*) aligned_buffer;
@@ -1441,7 +1441,6 @@ static int handle_readdir(struct fuse* fuse, struct fuse_handler* handler,
     struct fuse_dirent *fde = (struct fuse_dirent*) buffer;
     struct dirent *de;
     struct dirhandle *h = id_to_ptr(req->fh);
-    struct node* parent_node;
 
     TRACE("[%d] READDIR %p\n", handler->token, h);
     if (req->offset == 0) {
@@ -1449,7 +1448,6 @@ static int handle_readdir(struct fuse* fuse, struct fuse_handler* handler,
         TRACE("[%d] calling rewinddir()\n", handler->token);
         rewinddir(h->d);
     }
-skip:
     de = readdir(h->d);
     if (!de) {
         return 0;
@@ -1459,13 +1457,6 @@ skip:
     fde->off = req->offset + 1;
     fde->type = de->d_type;
     fde->namelen = strlen(de->d_name);
-
-    parent_node = lookup_node_by_id_locked(fuse, hdr->nodeid);
-
-    if (!check_caller_access_to_name(fuse, hdr, parent_node, de->d_name, R_OK, false)) {
-        goto skip;
-    }
-
     memcpy(fde->name, de->d_name, fde->namelen + 1);
     fuse_reply(fuse, hdr->unique, fde,
             FUSE_DIRENT_ALIGN(sizeof(struct fuse_dirent) + fde->namelen));
@@ -1707,12 +1698,12 @@ static int read_package_list(struct fuse *fuse) {
 
         if (sscanf(buf, "%s %d %*d %*s %*s %s", package_name, &appid, gids) == 3) {
             char* package_name_dup = strdup(package_name);
-            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) appid);
+            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) (uintptr_t) appid);
 
             char* token = strtok(gids, ",");
             while (token != NULL) {
                 if (strtoul(token, NULL, 10) == fuse->write_gid) {
-                    hashmapPut(fuse->appid_with_rw, (void*) appid, (void*) 1);
+                    hashmapPut(fuse->appid_with_rw, (void*) (uintptr_t) appid, (void*) (uintptr_t) 1);
                     break;
                 }
                 token = strtok(NULL, ",");
@@ -1720,7 +1711,7 @@ static int read_package_list(struct fuse *fuse) {
         }
     }
 
-    TRACE("read_package_list: found %d packages, %d with write_gid\n",
+    TRACE("read_package_list: found %zu packages, %zu with write_gid\n",
             hashmapSize(fuse->package_to_appid),
             hashmapSize(fuse->appid_with_rw));
     fclose(file);
